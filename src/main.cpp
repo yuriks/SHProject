@@ -369,6 +369,12 @@ void shproject_cpu(Colorf sh_coeffs[9], const Cubemap& input_cubemap)
 
 void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const ComputeContext& ctx)
 {
+	cl_program program = loadProgram(ctx, "shproject.cl");
+
+	cl_kernel pass1_kernel = createKernel(program, "shTransform");
+	cl_kernel pass2_kernel = createKernel(program, "shReduce");
+
+	// TODO
 	shproject_cpu(sh_coeffs, input_cubemap);
 }
 

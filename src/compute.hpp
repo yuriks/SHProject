@@ -14,5 +14,6 @@ struct ComputeContext
 bool initCompute(ComputeContext& ctx);
 void deinitCompute(ComputeContext& ctx);
 cl_program loadProgram(const ComputeContext& ctx, const char* fname);
+cl_kernel createKernel(cl_program program, const char* kernel_name);
 
 extern bool verboseComputeLogging;
