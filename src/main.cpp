@@ -10,6 +10,7 @@
 
 #include "stb_image.hpp"
 #include "stb_image_write.hpp"
+#include "compute.hpp"
 
 typedef uint8_t u8;
 typedef uint32_t u32;
@@ -266,7 +267,7 @@ struct ProgramOptions
 	std::vector<std::string> positional_params;
 	int return_code;
 
-	bool no_opencl;
+	bool use_opencl;
 	bool verbose;
 };
 
@@ -275,7 +276,7 @@ ProgramOptions parseOptions(int argc, char* argv[]) {
 
 	// Set defaults;
 	opts.return_code = 0;
-	opts.no_opencl = false;
+	opts.use_opencl = true;
 	opts.verbose = false;
 
 	if (argc < 1) {
@@ -295,7 +296,7 @@ ProgramOptions parseOptions(int argc, char* argv[]) {
 				std::copy(input_params.rbegin(), input_params.rend(), std::back_inserter(opts.positional_params));
 				break;
 			} else if (opt == "-c" || opt == "-no-opencl") {
-				opts.no_opencl = true;
+				opts.use_opencl = false;
 			} else if (opt == "-v" || opt == "-verbose") {
 				opts.verbose = true;
 			} else if (opt == "-h" || opt == "-help") {
@@ -366,11 +367,19 @@ void shproject_cpu(Colorf sh_coeffs[9], const Cubemap& input_cubemap)
 	}
 }
 
+void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const ComputeContext& ctx)
+{
+	shproject_cpu(sh_coeffs, input_cubemap);
+}
+
 int main(int argc, char* argv[]) {
 	ProgramOptions opts = parseOptions(argc, argv);
 
 	if (opts.return_code != 0)
 		return opts.return_code;
+
+	if (opts.verbose)
+		verboseComputeLogging = true;
 
 	if (opts.positional_params.size() != 2) {
 		printProgramUsage();
@@ -383,7 +392,24 @@ int main(int argc, char* argv[]) {
 	Cubemap input_cubemap(fname_prefix, fname_extension);
 
 	Colorf sh_coeffs[9];
-	shproject_cpu(sh_coeffs, input_cubemap);
+
+	ComputeContext compute_ctx;
+	if (opts.use_opencl) {
+		opts.use_opencl = initCompute(compute_ctx);
+		if (!opts.use_opencl) {
+			std::cerr << "OpenCL not available.\n";
+		}
+	}
+
+	if (opts.use_opencl) {
+		shproject_compute(sh_coeffs, input_cubemap, compute_ctx);
+	} else {
+		shproject_cpu(sh_coeffs, input_cubemap);
+	}
+
+	if (opts.use_opencl) {
+		deinitCompute(compute_ctx);
+	}
 
 	std::cout << "// l = 0\n";
 	printColorf(std::cout, sh_coeffs[0]);

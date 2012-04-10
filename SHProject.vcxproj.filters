@@ -24,12 +24,18 @@
     <ClCompile Include="src\stb_image_write.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\compute.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\stb_image_write.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\stb_image.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\compute.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
