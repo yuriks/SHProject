@@ -251,6 +251,8 @@ void printProgramUsage() {
 		"  SHProject [opts] [-] input_prefix input_extension\n"
 		"\n"
 		"Available options:\n"
+		"  -c / -no-opencl  Disable OpenCL support.\n"
+		"  -v / -verbose    Enables all sorts of debug garbage.\n"
 		"  -h / -help       Print this help text.\n"
 		"\n";
 }
@@ -259,96 +261,129 @@ std::ostream& printColorf(std::ostream& s, const Colorf& col) {
 	return s << col.r << "f, " << col.g << "f, " << col.b << "f,\n";
 }
 
-int main(int argc, char* argv[]) {
+struct ProgramOptions
+{
+	std::vector<std::string> positional_params;
+	int return_code;
+
+	bool no_opencl;
+	bool verbose;
+};
+
+ProgramOptions parseOptions(int argc, char* argv[]) {
+	ProgramOptions opts;
+
+	// Set defaults;
+	opts.return_code = 0;
+	opts.no_opencl = false;
+	opts.verbose = false;
+
 	if (argc < 1) {
 		printProgramUsage();
-		return 1;
+		opts.return_code = 1;
+		return opts;
 	}
 
-	std::vector<std::string> positional_params;
+	// Parse options
+	std::vector<std::string> input_params(std::reverse_iterator<char**>(argv+argc), std::reverse_iterator<char**>(argv+1));
 
-	{
-		std::vector<std::string> input_params(std::reverse_iterator<char**>(argv+argc), std::reverse_iterator<char**>(argv+1));
+	while (!input_params.empty()) {
+		std::string opt = pop_from(input_params);
 
-		while (!input_params.empty()) {
-			std::string opt = pop_from(input_params);
-
-			if (!opt.empty() && opt[0] == '-') {
-				if (opt == "-") {
-					std::copy(input_params.rbegin(), input_params.rend(), std::back_inserter(positional_params));
-					break;
-				} else if (opt == "-h" || opt == "-help") {
-					printProgramUsage();
-					return 0;
-				} else {
-					std::cerr << "Unknown option " << opt << ". Try -help.\n";
-					return 1;
-				}
+		if (!opt.empty() && opt[0] == '-') {
+			if (opt == "-") {
+				std::copy(input_params.rbegin(), input_params.rend(), std::back_inserter(opts.positional_params));
+				break;
+			} else if (opt == "-c" || opt == "-no-opencl") {
+				opts.no_opencl = true;
+			} else if (opt == "-v" || opt == "-verbose") {
+				opts.verbose = true;
+			} else if (opt == "-h" || opt == "-help") {
+				printProgramUsage();
+				opts.return_code = 1;
+				break;
 			} else {
-				positional_params.push_back(opt);
+				std::cerr << "Unknown option " << opt << ". Try -help.\n";
+				opts.return_code = 1;
+				break;
 			}
+		} else {
+			opts.positional_params.push_back(opt);
 		}
 	}
 
-	if (positional_params.size() != 2) {
-		printProgramUsage();
-		return 1;
-	}
+	return opts;
+}
 
-	std::string fname_prefix = positional_params[0];
-	std::string fname_extension = positional_params[1];
-
-	Colorf sh_coeffs[9];
+void shproject_cpu(Colorf sh_coeffs[9], const Cubemap& input_cubemap)
+{
 	for (int i = 0; i < 9; ++i)
 		sh_coeffs[i] = Colorf(0.f, 0.f, 0.f);
 
-	{
-		Cubemap input_cubemap(fname_prefix, fname_extension);
-		int in_width = input_cubemap.faces[0].width;
-		int in_height = input_cubemap.faces[0].height;
+	int in_width = input_cubemap.faces[0].width;
+	int in_height = input_cubemap.faces[0].height;
 
-		for (int face_i = 0; face_i < Cubemap::NUM_FACES; ++face_i) {
-			for (int y = 0; y < in_height; ++y) {
-				for (int x = 0; x < in_width; ++x) {
-						static const float c_SHconst_0 = 0.28209479177387814347f; // 1 / (2*sqrt(pi))
-						static const float c_SHconst_1 = 0.48860251190291992159f; // sqrt(3 /(4pi))
-						static const float c_SHconst_2 = 1.09254843059207907054f; // 1/2 * sqrt(15/pi)
-						static const float c_SHconst_3 = 0.31539156525252000603f; // 1/4 * sqrt(5/pi)
-						static const float c_SHconst_4 = 0.54627421529603953527f; // 1/4 * sqrt(15/pi)
+	for (int face_i = 0; face_i < Cubemap::NUM_FACES; ++face_i) {
+		for (int y = 0; y < in_height; ++y) {
+			for (int x = 0; x < in_width; ++x) {
+				static const float c_SHconst_0 = 0.28209479177387814347f; // 1 / (2*sqrt(pi))
+				static const float c_SHconst_1 = 0.48860251190291992159f; // sqrt(3 /(4pi))
+				static const float c_SHconst_2 = 1.09254843059207907054f; // 1/2 * sqrt(15/pi)
+				static const float c_SHconst_3 = 0.31539156525252000603f; // 1/4 * sqrt(5/pi)
+				static const float c_SHconst_4 = 0.54627421529603953527f; // 1/4 * sqrt(15/pi)
 
-						const Cubemap::CubeFace face = static_cast<Cubemap::CubeFace>(face_i);
-						const Colorf texel(input_cubemap.readTexel(face, x, y));
-						const float solid_angle = input_cubemap.calcSolidAngle(face, x, y);
+				const Cubemap::CubeFace face = static_cast<Cubemap::CubeFace>(face_i);
+				const Colorf texel(input_cubemap.readTexel(face, x, y));
+				const float solid_angle = input_cubemap.calcSolidAngle(face, x, y);
 
-						float dir_x;
-						float dir_y;
-						float dir_z;
-						input_cubemap.calcDirectionVector(face, x, y, dir_x, dir_y, dir_z);
+				float dir_x;
+				float dir_y;
+				float dir_z;
+				input_cubemap.calcDirectionVector(face, x, y, dir_x, dir_y, dir_z);
 
-						// l, m = 0, 0
-						sh_coeffs[0] += texel * c_SHconst_0 * solid_angle;
+				// l, m = 0, 0
+				sh_coeffs[0] += texel * c_SHconst_0 * solid_angle;
 
-						// l, m = 1, -1
-						sh_coeffs[1] += texel * c_SHconst_1 * dir_y * solid_angle;
-						// l, m = 1, 0
-						sh_coeffs[2] += texel * c_SHconst_1 * dir_z * solid_angle;
-						// l, m = 1, 1
-						sh_coeffs[3] += texel * c_SHconst_1 * dir_x * solid_angle;
+				// l, m = 1, -1
+				sh_coeffs[1] += texel * c_SHconst_1 * dir_y * solid_angle;
+				// l, m = 1, 0
+				sh_coeffs[2] += texel * c_SHconst_1 * dir_z * solid_angle;
+				// l, m = 1, 1
+				sh_coeffs[3] += texel * c_SHconst_1 * dir_x * solid_angle;
 
-						// l, m = 2, -2
-						sh_coeffs[4] += texel * c_SHconst_2 * (dir_x*dir_y) * solid_angle;
-						// l, m = 2, -1
-						sh_coeffs[5] += texel * c_SHconst_2 * (dir_y*dir_z) * solid_angle;
-						// l, m = 2, 0
-						sh_coeffs[6] += texel * c_SHconst_3 * (3.0f*dir_z*dir_z - 1.0f) * solid_angle;
-						// l, m = 2, 1
-						sh_coeffs[7] += texel * c_SHconst_2 * (dir_x*dir_z) * solid_angle;
-						// l, m = 2, 2
-						sh_coeffs[8] += texel * c_SHconst_4 * (dir_x*dir_x - dir_y*dir_y) * solid_angle;
-				}
+				// l, m = 2, -2
+				sh_coeffs[4] += texel * c_SHconst_2 * (dir_x*dir_y) * solid_angle;
+				// l, m = 2, -1
+				sh_coeffs[5] += texel * c_SHconst_2 * (dir_y*dir_z) * solid_angle;
+				// l, m = 2, 0
+				sh_coeffs[6] += texel * c_SHconst_3 * (3.0f*dir_z*dir_z - 1.0f) * solid_angle;
+				// l, m = 2, 1
+				sh_coeffs[7] += texel * c_SHconst_2 * (dir_x*dir_z) * solid_angle;
+				// l, m = 2, 2
+				sh_coeffs[8] += texel * c_SHconst_4 * (dir_x*dir_x - dir_y*dir_y) * solid_angle;
 			}
 		}
 	}
+}
+
+int main(int argc, char* argv[]) {
+	ProgramOptions opts = parseOptions(argc, argv);
+
+	if (opts.return_code != 0)
+		return opts.return_code;
+
+	if (opts.positional_params.size() != 2) {
+		printProgramUsage();
+		return 1;
+	}
+
+	std::string fname_prefix = opts.positional_params[0];
+	std::string fname_extension = opts.positional_params[1];
+
+	Cubemap input_cubemap(fname_prefix, fname_extension);
+
+	Colorf sh_coeffs[9];
+	shproject_cpu(sh_coeffs, input_cubemap);
 
 	std::cout << "// l = 0\n";
 	printColorf(std::cout, sh_coeffs[0]);
