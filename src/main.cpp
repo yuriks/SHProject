@@ -123,7 +123,7 @@ struct Cubemap {
 		faces[FACE_NEG_Z] = Image(fname_prefix + "_back."   + fname_extension);
 	}
 
-	u32 readTexel(CubeFace face, int x, int y) {
+	u32 readTexel(CubeFace face, int x, int y) const {
 		assert(face < NUM_FACES);
 		const Image& face_img = faces[face];
 
@@ -198,7 +198,7 @@ struct Cubemap {
 		return Colorf::mix(mix_0, mix_1, y_fract);
 	}
 
-	float calcSolidAngle(CubeFace face, int x, int y) {
+	float calcSolidAngle(CubeFace face, int x, int y) const {
 		float s = unlerp(x, faces[face].width)  * 2.0f - 1.0f;
 		float t = unlerp(y, faces[face].height) * 2.0f - 1.0f;
 
@@ -213,7 +213,7 @@ struct Cubemap {
 		return areaIntegral(x0, y0) - areaIntegral(x0, y1) - areaIntegral(x1, y0) + areaIntegral(x1, y1);
 	}
 
-	void calcDirectionVector(CubeFace face, int face_x, int face_y, float& out_x, float& out_y, float& out_z) {
+	void calcDirectionVector(CubeFace face, int face_x, int face_y, float& out_x, float& out_y, float& out_z) const {
 		float s = unlerp(face_x, faces[face].width)  * 2.0f - 1.0f;
 		float t = unlerp(face_y, faces[face].height) * 2.0f - 1.0f;
 
