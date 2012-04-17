@@ -72,7 +72,6 @@ void checkOpenCLError(cl_int return_code, const char* file, int line)
 
 	std::cerr << file << ':' << line << ": OpenCL returned error " << enum_name << std::endl;
 }
-#define CHECK(x) checkOpenCLError(x, __FILE__, __LINE__)
 
 bool enumerateDevices(cl_platform_id& platform_id, cl_device_id& device_id)
 {

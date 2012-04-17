@@ -11,6 +11,9 @@ struct ComputeContext
 	cl_command_queue cmd_queue;
 };
 
+void checkOpenCLError(cl_int return_code, const char* file, int line);
+#define CHECK(x) checkOpenCLError(x, __FILE__, __LINE__)
+
 bool initCompute(ComputeContext& ctx);
 void deinitCompute(ComputeContext& ctx);
 cl_program loadProgram(const ComputeContext& ctx, const char* fname);
