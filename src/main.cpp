@@ -47,7 +47,11 @@ struct Image {
 
 	Image(const std::string& filename) :
 		data(stbi_load(filename.c_str(), &width, &height, nullptr, 4), stbi_image_free)
-	{}
+	{
+		if (data == nullptr) {
+			std::cerr << "Failed to load " << filename << ".\n";
+		}
+	}
 
 	Image& operator= (Image&& o) {
 		width = o.width;
@@ -396,6 +400,12 @@ int main(int argc, char* argv[]) {
 	std::string fname_extension = opts.positional_params[1];
 
 	Cubemap input_cubemap(fname_prefix, fname_extension);
+	for (int i = 0; i < Cubemap::NUM_FACES; ++i) {
+		if (input_cubemap.faces[i].data == nullptr) {
+			std::cerr << "Failed to open input files.\n";
+			return 1;
+		}
+	}
 
 	Colorf sh_coeffs[9];
 
