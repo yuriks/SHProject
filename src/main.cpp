@@ -467,6 +467,8 @@ int main(int argc, char* argv[]) {
 	std::string fname_prefix = opts.positional_params[0];
 	std::string fname_extension = opts.positional_params[1];
 
+	std::cout << "Loading images... " << std::flush;
+
 	Cubemap input_cubemap(fname_prefix, fname_extension);
 	for (int i = 0; i < Cubemap::NUM_FACES; ++i) {
 		if (input_cubemap.faces[i].data == nullptr) {
@@ -474,6 +476,8 @@ int main(int argc, char* argv[]) {
 			return 1;
 		}
 	}
+
+	std::cout << "Done.\n";
 
 	Colorf sh_coeffs[9];
 
@@ -485,17 +489,25 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	if (!opts.use_opencl) {
+		std::cout << "Using CPU algorithm.\n";
+	}
+
+	std::cout << "Processing..." << std::flush;
+
 	if (opts.use_opencl) {
 		shproject_compute(sh_coeffs, input_cubemap, compute_ctx);
 	} else {
 		shproject_cpu(sh_coeffs, input_cubemap);
 	}
 
+	std::cout << "Done!\n";
+
 	if (opts.use_opencl) {
 		deinitCompute(compute_ctx);
 	}
 
-	std::cout << "// l = 0\n";
+	std::cout << "\n\n// l = 0\n";
 	printColorf(std::cout, sh_coeffs[0]);
 	std::cout << "\n// l = 1\n";
 	printColorf(std::cout, sh_coeffs[1]);
