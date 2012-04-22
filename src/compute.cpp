@@ -152,13 +152,18 @@ cl_context createContext(cl_platform_id platform_id, cl_device_id device_id)
 	return context;
 }
 
-cl_command_queue createCommandQueue(cl_context context, cl_device_id device_id)
+cl_command_queue createCommandQueue(cl_context context, cl_device_id device_id, bool profiling)
 {
 	if (verboseComputeLogging)
 		std::cout << "Creating command queue...\n";
 
 	cl_int error_code;
-	cl_command_queue cmd_queue = clCreateCommandQueue(context, device_id, CL_QUEUE_PROFILING_ENABLE, &error_code);
+
+	cl_command_queue_properties queue_props = CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
+	if (profiling)
+		queue_props |= CL_QUEUE_PROFILING_ENABLE;
+
+	cl_command_queue cmd_queue = clCreateCommandQueue(context, device_id, queue_props, &error_code);
 	CHECK(error_code);
 
 	return cmd_queue;
@@ -277,13 +282,13 @@ void printTimingStats(const double* timing_samples, int n)
 
 bool verboseComputeLogging = false;
 
-bool initCompute(ComputeContext& ctx)
+bool initCompute(ComputeContext& ctx, bool profiling)
 {
 	if (!enumerateDevices(ctx.platform_id, ctx.device_id))
 		return false;
 
 	ctx.context = createContext(ctx.platform_id, ctx.device_id);
-	ctx.cmd_queue = createCommandQueue(ctx.context, ctx.device_id);
+	ctx.cmd_queue = createCommandQueue(ctx.context, ctx.device_id, profiling);
 
 	return true;
 }

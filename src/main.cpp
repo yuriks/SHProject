@@ -258,6 +258,7 @@ void printProgramUsage() {
 		"Available options:\n"
 		"  -c / -no-opencl  Disable OpenCL support.\n"
 		"  -v / -verbose    Enables all sorts of debug garbage.\n"
+		"  -p / -profile    Enable timing statistics.\n"
 		"  -h / -help       Print this help text.\n"
 		"\n";
 }
@@ -273,6 +274,7 @@ struct ProgramOptions
 
 	bool use_opencl;
 	bool verbose;
+	bool profile;
 };
 
 ProgramOptions parseOptions(int argc, char* argv[]) {
@@ -282,6 +284,7 @@ ProgramOptions parseOptions(int argc, char* argv[]) {
 	opts.return_code = 0;
 	opts.use_opencl = true;
 	opts.verbose = false;
+	opts.profile = false;
 
 	if (argc < 1) {
 		printProgramUsage();
@@ -303,6 +306,8 @@ ProgramOptions parseOptions(int argc, char* argv[]) {
 				opts.use_opencl = false;
 			} else if (opt == "-v" || opt == "-verbose") {
 				opts.verbose = true;
+			} else if (opt == "-p" || opt == "-profile") {
+				opts.profile = true;
 			} else if (opt == "-h" || opt == "-help") {
 				printProgramUsage();
 				opts.return_code = 1;
@@ -319,6 +324,8 @@ ProgramOptions parseOptions(int argc, char* argv[]) {
 
 	return opts;
 }
+
+static ProgramOptions opts;
 
 void shproject_cpu(Colorf sh_coeffs[9], const Cubemap& input_cubemap)
 {
@@ -376,29 +383,43 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 	cl_int error_code;
 
 	cl_program program = loadProgram(ctx, "shproject.cl");
-
 	cl_kernel pass1_kernel = createKernel(program, "shTransform");
 	cl_kernel pass2_kernel = createKernel(program, "shReduce");
 
-	const cl_image_format img_format = {
+	// Number of items processed by each pass1
+	size_t data_size = input_cubemap.faces[0].width * input_cubemap.faces[0].height;
+	// Number of items processed in parallel by each pass1
+	size_t work_items = data_size / 64;
+	// Local work group size
+	size_t work_group_size = 64;
+	size_t partial_results_size = work_items / work_group_size;
+	size_t partial_buffer_size = partial_results_size * 9 * 4 * sizeof(float);
+	// Scratch space for pass1 intermediary results. Must fit in local memory
+	size_t partial_scratch_size = work_group_size * 9 * 4 * sizeof(float);
+
+	cl_event ev_face_upload[6];
+	cl_event ev_pass1[6];
+	cl_event ev_pass2;
+	cl_event ev_download;
+
+	// Image data
+	cl_mem cube_faces[6];
+	// Partial results calculated by each pass1 to be summed by pass2
+	cl_mem partial_sh_buf = clCreateBuffer(ctx.context, CL_MEM_READ_WRITE, 6 * partial_buffer_size, nullptr, &error_code); CHECK(error_code);
+	// Subviews from partial_sh_buf for eahc cube face
+	cl_mem partial_face_buffers[6];
+	// Holds final results
+	cl_mem final_buffer = clCreateBuffer(ctx.context, CL_MEM_WRITE_ONLY, 9 * 4 * sizeof(float), nullptr, &error_code); CHECK(error_code);
+
+	static const cl_image_format img_format = {
 		/*.image_channel_order = */ CL_RGBA,
 		/*.image_channel_data_type = */ CL_UNORM_INT8
 	};
 
-	size_t data_size = input_cubemap.faces[0].width * input_cubemap.faces[0].height;
-	size_t work_items = data_size / 64;
-	size_t work_group_size = 64;
-	size_t partial_results_size = work_items / work_group_size;
-
-	size_t partial_buffer_size = partial_results_size * 9 * 4 * sizeof(float);
-	cl_mem partial_sh_buf = clCreateBuffer(ctx.context, CL_MEM_READ_WRITE, 6 * partial_buffer_size, nullptr, &error_code); CHECK(error_code);
-
-	cl_mem cube_faces[6];
-	cl_mem partial_face_buffers[6];
+	// Create image buffers
 	for (int i = 0; i < 6; ++i) {
 		const Image& face = input_cubemap.faces[i];
-		cube_faces[i] = clCreateImage2D(ctx.context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, &img_format,
-			face.width, face.height, 0, face.data.get(), &error_code); CHECK(error_code);
+		cube_faces[i] = clCreateImage2D(ctx.context, CL_MEM_READ_ONLY, &img_format, face.width, face.height, 0, nullptr, &error_code); CHECK(error_code);
 
 		const cl_buffer_region region = {
 			/* .origin = */ i * partial_buffer_size,
@@ -407,11 +428,21 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 		partial_face_buffers[i] = clCreateSubBuffer(partial_sh_buf, CL_MEM_WRITE_ONLY, CL_BUFFER_CREATE_TYPE_REGION, &region, &error_code); CHECK(error_code);
 	}
 
-	CHECK(clFinish(ctx.cmd_queue));
+	if (opts.verbose)
+		std::cerr << "Buffers created\n";
 
-	size_t partial_scratch_size = work_group_size * 9 * 4 * sizeof(float);
+	static const size_t img_copy_offsets[3] = { 0, 0, 0 };
+	for (int i = 0 ; i < 6; ++i) {
+		const Image& face = input_cubemap.faces[i];
+		const size_t img_copy_region[3] = { face.width, face.height, 1 };
+
+		CHECK(clEnqueueWriteImage(ctx.cmd_queue, cube_faces[i], CL_FALSE, img_copy_offsets, img_copy_region, 0, 0, face.data.get(), 0, nullptr, &ev_face_upload[i]));
+	}
+
+	if (opts.verbose)
+		std::cerr << "Image uploads enqueued\n";
+
 	CHECK(clSetKernelArg(pass1_kernel, 2, partial_scratch_size, nullptr));
-
 	float inv_size = 1.f / input_cubemap.faces[0].width;
 	CHECK(clSetKernelArg(pass1_kernel, 4, sizeof(inv_size), &inv_size));
 
@@ -420,27 +451,40 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 		CHECK(clSetKernelArg(pass1_kernel, 1, sizeof(partial_face_buffers[i]), &partial_face_buffers[i]));
 		CHECK(clSetKernelArg(pass1_kernel, 3, sizeof(i), &i));
 
-		CHECK(clEnqueueNDRangeKernel(ctx.cmd_queue, pass1_kernel, 1, nullptr, &work_items, &work_group_size, 0, nullptr, nullptr));
+		CHECK(clEnqueueNDRangeKernel(ctx.cmd_queue, pass1_kernel, 1, nullptr, &work_items, &work_group_size, 1, &ev_face_upload[i], &ev_pass1[i]));
+		if (opts.verbose)
+			std::cerr << "Enqueued pass1 " << i << '\n';
 	}
-
-	cl_mem final_buffer = clCreateBuffer(ctx.context, CL_MEM_WRITE_ONLY, 9 * 4 * sizeof(float), nullptr, &error_code); CHECK(error_code);
 
 	CHECK(clSetKernelArg(pass2_kernel, 0, sizeof(partial_sh_buf), &partial_sh_buf));
 	CHECK(clSetKernelArg(pass2_kernel, 1, sizeof(final_buffer), &final_buffer));
 	int reduction_n = 6 * partial_results_size;
 	CHECK(clSetKernelArg(pass2_kernel, 2, sizeof(reduction_n), &reduction_n));
 
-	CHECK(clFinish(ctx.cmd_queue));
-
 	size_t reduction_size = 9;
-	CHECK(clEnqueueNDRangeKernel(ctx.cmd_queue, pass2_kernel, 1, nullptr, &reduction_size, nullptr, 0, nullptr, nullptr));
+	CHECK(clEnqueueNDRangeKernel(ctx.cmd_queue, pass2_kernel, 1, nullptr, &reduction_size, nullptr, 6, ev_pass1, &ev_pass2));
 
-	CHECK(clFinish(ctx.cmd_queue));
+	if (opts.verbose)
+		std::cerr << "Enqueued pass2\n";
 
 	float results[9 * 4];
-	CHECK(clEnqueueReadBuffer(ctx.cmd_queue, final_buffer, CL_TRUE, 0, sizeof(results), results, 0, nullptr, nullptr));
+	CHECK(clEnqueueReadBuffer(ctx.cmd_queue, final_buffer, CL_FALSE, 0, sizeof(results), results, 1, &ev_pass2, &ev_download));
+
+	if (opts.verbose)
+		std::cerr << "Enqueued image read\n";
 
 	CHECK(clFinish(ctx.cmd_queue));
+
+	// Free memory objects
+	for (int i = 0; i < 6; ++i) {
+		clReleaseMemObject(cube_faces[i]);
+		clReleaseMemObject(partial_face_buffers[i]);
+	}
+	clReleaseMemObject(partial_sh_buf);
+	clReleaseMemObject(final_buffer);
+
+	if (opts.verbose)
+		std::cerr << "Finished\n";
 
 	for (int i = 0; i < 9; ++i) {
 		sh_coeffs[i] = Colorf(
@@ -451,7 +495,7 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 }
 
 int main(int argc, char* argv[]) {
-	ProgramOptions opts = parseOptions(argc, argv);
+	opts = parseOptions(argc, argv);
 
 	if (opts.return_code != 0)
 		return opts.return_code;
@@ -483,7 +527,7 @@ int main(int argc, char* argv[]) {
 
 	ComputeContext compute_ctx;
 	if (opts.use_opencl) {
-		opts.use_opencl = initCompute(compute_ctx);
+		opts.use_opencl = initCompute(compute_ctx, opts.profile);
 		if (!opts.use_opencl) {
 			std::cerr << "OpenCL not available.\n";
 		}
