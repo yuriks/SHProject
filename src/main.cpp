@@ -437,10 +437,9 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 		const size_t img_copy_region[3] = { face.width, face.height, 1 };
 
 		CHECK(clEnqueueWriteImage(ctx.cmd_queue, cube_faces[i], CL_FALSE, img_copy_offsets, img_copy_region, 0, 0, face.data.get(), 0, nullptr, &ev_face_upload[i]));
+		if (opts.verbose)
+			std::cerr << "Enqueued upload " << i+1 << '\n';
 	}
-
-	if (opts.verbose)
-		std::cerr << "Image uploads enqueued\n";
 
 	CHECK(clSetKernelArg(pass1_kernel, 2, partial_scratch_size, nullptr));
 	float inv_size = 1.f / input_cubemap.faces[0].width;
@@ -453,7 +452,7 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 
 		CHECK(clEnqueueNDRangeKernel(ctx.cmd_queue, pass1_kernel, 1, nullptr, &work_items, &work_group_size, 1, &ev_face_upload[i], &ev_pass1[i]));
 		if (opts.verbose)
-			std::cerr << "Enqueued pass1 " << i << '\n';
+			std::cerr << "Enqueued pass1 " << i+1 << '\n';
 	}
 
 	CHECK(clSetKernelArg(pass2_kernel, 0, sizeof(partial_sh_buf), &partial_sh_buf));
@@ -471,7 +470,7 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 	CHECK(clEnqueueReadBuffer(ctx.cmd_queue, final_buffer, CL_FALSE, 0, sizeof(results), results, 1, &ev_pass2, &ev_download));
 
 	if (opts.verbose)
-		std::cerr << "Enqueued image read\n";
+		std::cerr << "Enqueued coefficients read\n";
 
 	CHECK(clFinish(ctx.cmd_queue));
 
