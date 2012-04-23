@@ -74,11 +74,13 @@
     <ClCompile Include="src\compute.cpp" />
     <ClCompile Include="src\stb_image.cpp" />
     <ClCompile Include="src\stb_image_write.cpp" />
+    <ClCompile Include="src\timer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\compute.hpp" />
     <ClInclude Include="src\stb_image.hpp" />
     <ClInclude Include="src\stb_image_write.hpp" />
+    <ClInclude Include="src\timer.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
