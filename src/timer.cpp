@@ -1,11 +1,9 @@
 #include "timer.hpp"
 
+#ifdef _WIN32
 #include <Windows.h>
 
-#ifdef _WIN32
 static LARGE_INTEGER clock_start;
-#else
-#error Unsupported system
 #endif
 
 void startPerfTimer()
@@ -25,5 +23,7 @@ double stopPerfTimer()
 	QueryPerformanceFrequency(&clock_freq);
 
 	return (clock_end.QuadPart - clock_start.QuadPart) / (double)(clock_freq.QuadPart) * 1000.0;
+#else
+	return 0.f;
 #endif
 }
