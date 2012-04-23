@@ -264,22 +264,6 @@ bool compareResults(float* v_a, float* v_b, size_t size)
 	return true;
 }
 
-void printTimingStats(const double* timing_samples, int n)
-{
-	double total_ms = std::accumulate(timing_samples, timing_samples + n, 0.0);
-	double mean_ms = total_ms / n;
-
-	double sqr_mean_ms = std::accumulate(timing_samples, timing_samples + n, 0.0, [](double a, double b) { return a + b*b; });
-	sqr_mean_ms /= n;
-
-	double std_dev_ms = std::sqrt(sqr_mean_ms - mean_ms*mean_ms);
-
-	std::cout << "Timing stats:\n" <<
-		"    Total: "     << total_ms    << "ms\n" <<
-		"    Mean: "      << mean_ms     << "ms\n" <<
-		"    Std. dev.: " << std_dev_ms  << "ms\n";
-}
-
 bool verboseComputeLogging = false;
 
 bool initCompute(ComputeContext& ctx, bool profiling)

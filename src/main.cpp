@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <numeric>
 
 #include "stb_image.hpp"
 #include "stb_image_write.hpp"
@@ -491,6 +492,22 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 	}
 }
 
+void printTimingStats(const double* timing_samples, int n)
+{
+	double total_ms = std::accumulate(timing_samples, timing_samples + n, 0.0);
+	double mean_ms = total_ms / n;
+
+	double sqr_mean_ms = std::accumulate(timing_samples, timing_samples + n, 0.0, [](double a, double b) { return a + b*b; });
+	sqr_mean_ms /= n;
+
+	double std_dev_ms = std::sqrt(sqr_mean_ms - mean_ms*mean_ms);
+
+	std::cout << "Timing stats:\n" <<
+		"    Total: "     << total_ms    << "ms\n" <<
+		"    Mean: "      << mean_ms     << "ms\n" <<
+		"    Std. dev.: " << std_dev_ms  << "ms\n";
+}
+
 int main(int argc, char* argv[]) {
 	opts = parseOptions(argc, argv);
 
@@ -536,21 +553,26 @@ int main(int argc, char* argv[]) {
 
 	std::cout << "Processing..." << std::flush;
 
-	if (opts.profile)
-		startPerfTimer();
+	static const int number_of_runs = 16;
+	double run_times[number_of_runs];
+	for (int run = 0; run < (opts.profile ? number_of_runs : 1); ++run) {
+		if (opts.profile)
+			startPerfTimer();
 
-	if (opts.use_opencl) {
-		shproject_compute(sh_coeffs, input_cubemap, compute_ctx);
-	} else {
-		shproject_cpu(sh_coeffs, input_cubemap);
+		if (opts.use_opencl) {
+			shproject_compute(sh_coeffs, input_cubemap, compute_ctx);
+		} else {
+			shproject_cpu(sh_coeffs, input_cubemap);
+		}
+
+		if (opts.profile)
+			run_times[run] = stopPerfTimer();
 	}
 
-	if (opts.profile) {
-		double elapsed_time = stopPerfTimer();
+	std::cout << "Done!\n";
 
-		std::cout << "Done in " << elapsed_time << "ms!\n";
-	} else {
-		std::cout << "Done!\n";
+	if (opts.profile) {
+		printTimingStats(run_times, number_of_runs);
 	}
 
 	if (opts.use_opencl) {
