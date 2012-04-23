@@ -11,6 +11,7 @@
 #include "stb_image.hpp"
 #include "stb_image_write.hpp"
 #include "compute.hpp"
+#include "timer.hpp"
 
 typedef uint8_t u8;
 typedef uint32_t u32;
@@ -538,13 +539,22 @@ int main(int argc, char* argv[]) {
 
 	std::cout << "Processing..." << std::flush;
 
+	if (opts.profile)
+		startPerfTimer();
+
 	if (opts.use_opencl) {
 		shproject_compute(sh_coeffs, input_cubemap, compute_ctx);
 	} else {
 		shproject_cpu(sh_coeffs, input_cubemap);
 	}
 
-	std::cout << "Done!\n";
+	if (opts.profile) {
+		double elapsed_time = stopPerfTimer();
+
+		std::cout << "Done in " << elapsed_time << "ms!\n";
+	} else {
+		std::cout << "Done!\n";
+	}
 
 	if (opts.use_opencl) {
 		deinitCompute(compute_ctx);
