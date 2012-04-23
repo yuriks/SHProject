@@ -432,6 +432,10 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 	if (opts.verbose)
 		std::cerr << "Buffers created\n";
 
+	CHECK(clSetKernelArg(pass1_kernel, 2, partial_scratch_size, nullptr));
+	float inv_size = 1.f / input_cubemap.faces[0].width;
+	CHECK(clSetKernelArg(pass1_kernel, 4, sizeof(inv_size), &inv_size));
+
 	static const size_t img_copy_offsets[3] = { 0, 0, 0 };
 	for (int i = 0 ; i < 6; ++i) {
 		const Image& face = input_cubemap.faces[i];
@@ -440,13 +444,7 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 		CHECK(clEnqueueWriteImage(ctx.cmd_queue, cube_faces[i], CL_FALSE, img_copy_offsets, img_copy_region, 0, 0, face.data.get(), 0, nullptr, &ev_face_upload[i]));
 		if (opts.verbose)
 			std::cerr << "Enqueued upload " << i+1 << '\n';
-	}
 
-	CHECK(clSetKernelArg(pass1_kernel, 2, partial_scratch_size, nullptr));
-	float inv_size = 1.f / input_cubemap.faces[0].width;
-	CHECK(clSetKernelArg(pass1_kernel, 4, sizeof(inv_size), &inv_size));
-
-	for (int i = 0; i < 6; ++i) {
 		CHECK(clSetKernelArg(pass1_kernel, 0, sizeof(cube_faces[i]), &cube_faces[i]));
 		CHECK(clSetKernelArg(pass1_kernel, 1, sizeof(partial_face_buffers[i]), &partial_face_buffers[i]));
 		CHECK(clSetKernelArg(pass1_kernel, 3, sizeof(i), &i));
@@ -454,6 +452,9 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 		CHECK(clEnqueueNDRangeKernel(ctx.cmd_queue, pass1_kernel, 1, nullptr, &work_items, &work_group_size, 1, &ev_face_upload[i], &ev_pass1[i]));
 		if (opts.verbose)
 			std::cerr << "Enqueued pass1 " << i+1 << '\n';
+
+		clReleaseMemObject(cube_faces[i]);
+		clReleaseMemObject(partial_face_buffers[i]);
 	}
 
 	CHECK(clSetKernelArg(pass2_kernel, 0, sizeof(partial_sh_buf), &partial_sh_buf));
@@ -476,10 +477,6 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 	CHECK(clFinish(ctx.cmd_queue));
 
 	// Free memory objects
-	for (int i = 0; i < 6; ++i) {
-		clReleaseMemObject(cube_faces[i]);
-		clReleaseMemObject(partial_face_buffers[i]);
-	}
 	clReleaseMemObject(partial_sh_buf);
 	clReleaseMemObject(final_buffer);
 
