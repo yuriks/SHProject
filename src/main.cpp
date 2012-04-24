@@ -277,6 +277,7 @@ struct ProgramOptions
 	bool use_opencl;
 	bool verbose;
 	bool profile;
+	int profile_runs;
 };
 
 ProgramOptions parseOptions(int argc, char* argv[]) {
@@ -287,6 +288,7 @@ ProgramOptions parseOptions(int argc, char* argv[]) {
 	opts.use_opencl = true;
 	opts.verbose = false;
 	opts.profile = false;
+	opts.profile_runs = 1;
 
 	if (argc < 1) {
 		printProgramUsage();
@@ -310,6 +312,7 @@ ProgramOptions parseOptions(int argc, char* argv[]) {
 				opts.verbose = true;
 			} else if (opt == "-p" || opt == "-profile") {
 				opts.profile = true;
+				opts.profile_runs = std::stoi(pop_from(input_params));
 			} else if (opt == "-h" || opt == "-help") {
 				printProgramUsage();
 				opts.return_code = 1;
@@ -553,9 +556,8 @@ int main(int argc, char* argv[]) {
 
 	std::cout << "Processing..." << std::flush;
 
-	static const int number_of_runs = 16;
-	double run_times[number_of_runs];
-	for (int run = 0; run < (opts.profile ? number_of_runs : 1); ++run) {
+	std::vector<double> run_times;
+	for (int run = 0; run < opts.profile_runs; ++run) {
 		if (opts.profile)
 			startPerfTimer();
 
@@ -566,13 +568,13 @@ int main(int argc, char* argv[]) {
 		}
 
 		if (opts.profile)
-			run_times[run] = stopPerfTimer();
+			run_times.push_back(stopPerfTimer());
 	}
 
 	std::cout << "Done!\n";
 
 	if (opts.profile) {
-		printTimingStats(run_times, number_of_runs);
+		printTimingStats(run_times.data(), run_times.size());
 	}
 
 	if (opts.use_opencl) {
