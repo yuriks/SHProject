@@ -383,13 +383,19 @@ void shproject_cpu(Colorf sh_coeffs[9], const Cubemap& input_cubemap)
 	}
 }
 
+cl_program program = nullptr;
+cl_kernel pass1_kernel;
+cl_kernel pass2_kernel;
+
 void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const ComputeContext& ctx)
 {
 	cl_int error_code;
 
-	cl_program program = loadProgram(ctx, "shproject.cl");
-	cl_kernel pass1_kernel = createKernel(program, "shTransform");
-	cl_kernel pass2_kernel = createKernel(program, "shReduce");
+	if (program == nullptr) {
+		program = loadProgram(ctx, "shproject.cl");
+		pass1_kernel = createKernel(program, "shTransform");
+		pass2_kernel = createKernel(program, "shReduce");
+	}
 
 	// Number of items processed by each pass1
 	size_t data_size = input_cubemap.faces[0].width * input_cubemap.faces[0].height;
@@ -493,6 +499,14 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 			results[i*4 + 1],
 			results[i*4 + 2]);
 	}
+
+	// Free events
+	for (int i = 0; i < 6; ++i) {
+		clReleaseEvent(ev_face_upload[i]);
+		clReleaseEvent(ev_pass1[i]);
+	}
+	clReleaseEvent(ev_pass2);
+	clReleaseEvent(ev_download);
 }
 
 void printTimingStats(const double* timing_samples, int n)
@@ -557,6 +571,7 @@ int main(int argc, char* argv[]) {
 	std::cout << "Processing..." << std::flush;
 
 	std::vector<double> run_times;
+	run_times.reserve(opts.profile_runs);
 	for (int run = 0; run < opts.profile_runs; ++run) {
 		if (opts.profile)
 			startPerfTimer();
