@@ -568,13 +568,16 @@ int main(int argc, char* argv[]) {
 		std::cout << "Using CPU algorithm.\n";
 	}
 
-	std::cout << "Processing..." << std::flush;
+	if (!opts.profile)
+		std::cout << "Processing..." << std::flush;
 
 	std::vector<double> run_times;
 	run_times.reserve(opts.profile_runs);
 	for (int run = 0; run < opts.profile_runs; ++run) {
-		if (opts.profile)
+		if (opts.profile) {
+			std::cout << "\rProcessing..." << run+1 << '/' << opts.profile_runs << std::flush;
 			startPerfTimer();
+		}
 
 		if (opts.use_opencl) {
 			shproject_compute(sh_coeffs, input_cubemap, compute_ctx);
@@ -586,7 +589,10 @@ int main(int argc, char* argv[]) {
 			run_times.push_back(stopPerfTimer());
 	}
 
-	std::cout << "Done!\n";
+	if (!opts.profile)
+		std::cout << "Done!\n";
+	else
+		std::cout << "\rProcessing...Done!         \n";
 
 	if (opts.profile) {
 		printTimingStats(run_times.data(), run_times.size());
