@@ -400,9 +400,9 @@ void shproject_compute(Colorf sh_coeffs[9], const Cubemap& input_cubemap, const 
 	// Number of items processed by each pass1
 	size_t data_size = input_cubemap.faces[0].width * input_cubemap.faces[0].height;
 	// Number of items processed in parallel by each pass1
-	size_t work_items = data_size / 64;
+	size_t work_items = data_size / 128;
 	// Local work group size
-	size_t work_group_size = 64;
+	size_t work_group_size = 32;
 	size_t partial_results_size = work_items / work_group_size;
 	size_t partial_buffer_size = partial_results_size * 9 * 4 * sizeof(float);
 	// Scratch space for pass1 intermediary results. Must fit in local memory
